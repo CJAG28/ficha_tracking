@@ -158,7 +158,10 @@
                     <h2>Panel Principal de Control</h2>
                     <p>Monitoreo de liquidez por cuenta, gastos y límite de consumo diario</p>
                 </div>
-                <button class="btn btn-primary" onclick="openTxModal()">+ Nuevo Movimiento</button>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-secondary" onclick="openCsvModal()">📥 Descargar CSV</button>
+                    <button class="btn btn-primary" onclick="openTxModal()">+ Nuevo Movimiento</button>
+                </div>
             </div>
 
             <div id="liquidityAlert" class="alert-box" style="display: none;">
@@ -177,6 +180,19 @@
 
             <h3>💳 Disponibilidad por Fuentes de Dinero</h3>
             <div class="kpi-grid" id="accountsKpiGrid" style="margin-top: 12px;"></div>
+
+            <div class="card" style="margin-top: 24px;">
+                <div class="card-header">
+                    <h3>🧾 Resumen de tus Egresos</h3>
+                    <select id="summaryPeriodSelect" class="form-control" style="width:auto;" onchange="renderSpendingSummary()">
+                        <option value="month">Este mes</option>
+                        <option value="week">Esta semana</option>
+                        <option value="year">Este año</option>
+                        <option value="all">Todo el historial</option>
+                    </select>
+                </div>
+                <div id="spendingSummaryList"></div>
+            </div>
         </div>
 
         <!-- TAB 2: REGISTRO DIARIO -->
@@ -378,8 +394,28 @@
                 </div>
                 <div class="form-group">
                     <label>Monto (GTQ)</label>
-                    <input type="number" step="0.01" id="txAmount" class="form-control" placeholder="0.00" required>
+                    <input type="number" step="0.01" id="txAmount" class="form-control" placeholder="0.00" required onchange="syncGoalAmountMax()">
                 </div>
+
+                <div class="form-group" style="background: var(--brand-light); padding: 10px 12px; border-radius: 8px;">
+                    <label style="display:flex; align-items:center; gap:6px; font-weight:600;">
+                        <input type="checkbox" id="txLinkGoal" style="width:auto;" onchange="toggleGoalLinkFields()"> Destinar parte de este movimiento a un Objetivo
+                    </label>
+                    <div id="goalLinkFields" style="display:none; margin-top:10px;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Objetivo</label>
+                                <select id="txGoalId" class="form-control"></select>
+                            </div>
+                            <div class="form-group">
+                                <label>Monto a Abonar (GTQ)</label>
+                                <input type="number" step="0.01" id="txGoalAmount" class="form-control" placeholder="0.00">
+                            </div>
+                        </div>
+                        <p style="font-size:0.78rem; color:var(--text-muted);">Ej. De <strong>GTQ 2000.00</strong> de <strong>BANCO 1</strong> hacia tu objetivo <strong>"COMPRA DE VEHÍCULO NUEVO"</strong>. El monto abonado no puede superar el monto del movimiento.</p>
+                    </div>
+                </div>
+
                 <div class="modal-actions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
                     <button type="button" class="btn btn-secondary" onclick="closeTxModal()">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Guardar Registro</button>
@@ -417,6 +453,48 @@
                 <div class="modal-actions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
                     <button type="button" class="btn btn-secondary" onclick="closeTransferModal()">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Realizar Transferencia</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="csvModal">
+        <div class="modal">
+            <h3>📥 Descargar CSV de mis Movimientos</h3>
+            <form id="csvForm" onsubmit="generateCsv(event)">
+                <div class="form-group">
+                    <label>Rango de Fechas</label>
+                    <select id="csvRangeType" class="form-control" onchange="toggleCsvCustomRange()">
+                        <option value="week">Semana actual</option>
+                        <option value="month">Mes actual</option>
+                        <option value="year">Año actual</option>
+                        <option value="custom">Periodo personalizado</option>
+                    </select>
+                </div>
+                <div class="form-row" id="csvCustomRangeRow" style="display:none;">
+                    <div class="form-group">
+                        <label>Desde</label>
+                        <input type="date" id="csvFromDate" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Hasta</label>
+                        <input type="date" id="csvToDate" class="form-control">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Incluir en el archivo</label>
+                    <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
+                        <label style="font-weight:400; display:flex; align-items:center; gap:6px;">
+                            <input type="checkbox" id="csvIncludeTx" checked style="width:auto;"> Movimientos (ingresos y egresos)
+                        </label>
+                        <label style="font-weight:400; display:flex; align-items:center; gap:6px;">
+                            <input type="checkbox" id="csvIncludeTr" checked style="width:auto;"> Transferencias internas
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-actions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeCsvModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Descargar CSV</button>
                 </div>
             </form>
         </div>
@@ -633,7 +711,7 @@
                     <td>${tx.concept}</td>
                     <td><span class="badge ${tx.type === 'Ingreso' ? 'badge-ingreso' : 'badge-egreso'}">${tx.type}</span></td>
                     <td><strong>${tx.account}</strong></td>
-                    <td>${tx.mainCat} - <em>${tx.subCat}</em></td>
+                    <td>${tx.mainCat} - <em>${tx.subCat}</em>${tx.goalId ? `<br><span class="badge" style="background:#e0f2fe; color:#0369a1; margin-top:4px; display:inline-block;">🎯 GTQ ${parseFloat(tx.goalAmount).toFixed(2)} a "${tx.goalTitle}"</span>` : ''}</td>
                     <td><strong>GTQ ${parseFloat(tx.amount).toFixed(2)}</strong></td>
                     <td style="text-align: center;">
                         <button class="btn btn-edit" onclick="editTransaction(${tx.id})">✏️</button>
@@ -661,6 +739,72 @@
             });
 
             renderGoals();
+            renderSpendingSummary();
+        }
+
+        function getPeriodRange(rangeType, refDate) {
+            const today = refDate ? new Date(refDate) : new Date();
+            let start, end;
+
+            if (rangeType === 'week') {
+                const dow = today.getDay(); // 0 = Domingo
+                const diffToMonday = (dow === 0 ? 6 : dow - 1);
+                start = new Date(today); start.setDate(today.getDate() - diffToMonday); start.setHours(0,0,0,0);
+                end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23,59,59,999);
+            } else if (rangeType === 'month') {
+                start = new Date(today.getFullYear(), today.getMonth(), 1);
+                end = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+            } else if (rangeType === 'year') {
+                start = new Date(today.getFullYear(), 0, 1);
+                end = new Date(today.getFullYear(), 11, 31, 23, 59, 59, 999);
+            } else {
+                start = new Date(0);
+                end = new Date(8640000000000000);
+            }
+            return { start, end };
+        }
+
+        function isDateInRange(dateStr, start, end) {
+            const d = new Date(dateStr + 'T00:00:00');
+            return d >= start && d <= end;
+        }
+
+        function renderSpendingSummary() {
+            const periodType = document.getElementById('summaryPeriodSelect').value;
+            const { start, end } = getPeriodRange(periodType);
+            const userTx = db.data[currentUser] || [];
+
+            const egresos = userTx.filter(tx => tx.type === 'Egreso' && isDateInRange(tx.date, start, end));
+
+            const totals = {};
+            let grandTotal = 0;
+            egresos.forEach(tx => {
+                const key = `${tx.mainCat}|||${tx.subCat}`;
+                totals[key] = (totals[key] || 0) + parseFloat(tx.amount);
+                grandTotal += parseFloat(tx.amount);
+            });
+
+            const rows = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+            const container = document.getElementById('spendingSummaryList');
+
+            if (rows.length === 0) {
+                container.innerHTML = `<p style="color: var(--text-muted); font-size: 0.9rem;">No tienes egresos registrados en este periodo.</p>`;
+                return;
+            }
+
+            let html = `<p style="margin-bottom: 12px; font-size: 0.95rem;">En este periodo has gastado un total de <strong style="color: var(--accent-red);">GTQ ${grandTotal.toFixed(2)}</strong>, distribuido así:</p>`;
+            html += `<ul style="list-style:none; display:flex; flex-direction:column; gap:8px;">`;
+            rows.forEach(([key, amount]) => {
+                const [mainCat, subCat] = key.split('|||');
+                const pct = grandTotal > 0 ? (amount / grandTotal * 100) : 0;
+                html += `
+                    <li style="border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+                        Has usado <strong style="color: var(--brand-color);">GTQ ${amount.toFixed(2)}</strong> (${pct.toFixed(1)}%) en <strong>${mainCat}</strong> - <em>${subCat}</em>
+                    </li>
+                `;
+            });
+            html += `</ul>`;
+            container.innerHTML = html;
         }
 
         function renderGoals() {
@@ -735,7 +879,41 @@
             document.getElementById('txForm').reset();
             populateAccountDropdown('txAccount');
             populateCategoryDropdowns();
+            document.getElementById('txLinkGoal').checked = false;
+            populateGoalDropdown('txGoalId');
+            toggleGoalLinkFields();
             document.getElementById('txModal').style.display = 'flex';
+            document.getElementById('txDate').valueAsDate = new Date();
+        }
+
+        function populateGoalDropdown(elementId) {
+            const sel = document.getElementById(elementId);
+            sel.innerHTML = '';
+            const goals = db.goals[currentUser] || [];
+            if (goals.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = ''; opt.textContent = 'No tienes objetivos creados';
+                sel.appendChild(opt);
+                return;
+            }
+            goals.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g.id; opt.textContent = g.title;
+                sel.appendChild(opt);
+            });
+        }
+
+        function toggleGoalLinkFields() {
+            const checked = document.getElementById('txLinkGoal').checked;
+            document.getElementById('goalLinkFields').style.display = checked ? 'block' : 'none';
+            if (checked) syncGoalAmountMax();
+        }
+
+        function syncGoalAmountMax() {
+            const txAmount = parseFloat(document.getElementById('txAmount').value) || 0;
+            const goalAmountInput = document.getElementById('txGoalAmount');
+            goalAmountInput.max = txAmount;
+            if (!goalAmountInput.value) goalAmountInput.value = txAmount || '';
         }
 
         function closeTxModal() { document.getElementById('txModal').style.display = 'none'; }
@@ -781,6 +959,24 @@
         function saveTransaction(e) {
             e.preventDefault();
             const editId = document.getElementById('editTxId').value;
+            const txAmount = parseFloat(document.getElementById('txAmount').value);
+
+            const linkGoal = document.getElementById('txLinkGoal').checked;
+            let goalId = null, goalAmount = 0, goalTitle = null;
+
+            if (linkGoal) {
+                const goalIdRaw = document.getElementById('txGoalId').value;
+                goalAmount = parseFloat(document.getElementById('txGoalAmount').value) || 0;
+
+                if (!goalIdRaw) { alert('No tienes objetivos creados. Crea uno primero en "Objetivos por Alcanzar".'); return; }
+                if (goalAmount <= 0) { alert('Indica el monto a abonar al objetivo.'); return; }
+                if (goalAmount > txAmount) { alert('El monto a abonar al objetivo no puede superar el monto del movimiento.'); return; }
+
+                goalId = parseInt(goalIdRaw);
+                const goalRef = (db.goals[currentUser] || []).find(g => g.id === goalId);
+                goalTitle = goalRef ? goalRef.title : null;
+            }
+
             const tx = {
                 id: editId ? parseInt(editId) : Date.now(),
                 date: document.getElementById('txDate').value,
@@ -789,16 +985,32 @@
                 account: document.getElementById('txAccount').value,
                 mainCat: document.getElementById('txMainCategory').value,
                 subCat: document.getElementById('txSubCategory').value,
-                amount: parseFloat(document.getElementById('txAmount').value)
+                amount: txAmount,
+                goalId: goalId,
+                goalTitle: goalTitle,
+                goalAmount: goalId ? goalAmount : 0
             };
 
             if (!db.data[currentUser]) db.data[currentUser] = [];
 
             if (editId) {
+                // Si el registro editado ya había abonado a un objetivo, revertir ese abono antes de aplicar el nuevo.
                 const idx = db.data[currentUser].findIndex(t => t.id === parseInt(editId));
-                if (idx !== -1) db.data[currentUser][idx] = tx;
+                if (idx !== -1) {
+                    const prevTx = db.data[currentUser][idx];
+                    if (prevTx.goalId) {
+                        const prevGoal = (db.goals[currentUser] || []).find(g => g.id === prevTx.goalId);
+                        if (prevGoal) prevGoal.current -= prevTx.goalAmount;
+                    }
+                    db.data[currentUser][idx] = tx;
+                }
             } else {
                 db.data[currentUser].push(tx);
+            }
+
+            if (goalId) {
+                const goalRef = (db.goals[currentUser] || []).find(g => g.id === goalId);
+                if (goalRef) goalRef.current += goalAmount;
             }
 
             saveDB(); renderData(); closeTxModal();
@@ -806,6 +1018,11 @@
 
         function deleteTransaction(id) {
             if (confirm('¿Eliminar registro?')) {
+                const tx = db.data[currentUser].find(t => t.id === id);
+                if (tx && tx.goalId) {
+                    const goalRef = (db.goals[currentUser] || []).find(g => g.id === tx.goalId);
+                    if (goalRef) goalRef.current -= tx.goalAmount;
+                }
                 db.data[currentUser] = db.data[currentUser].filter(t => t.id !== id);
                 saveDB(); renderData();
             }
@@ -877,6 +1094,93 @@
                 db.goals[currentUser] = db.goals[currentUser].filter(x => x.id !== id);
                 saveDB(); renderData();
             }
+        }
+
+        function openCsvModal() {
+            document.getElementById('csvForm').reset();
+            document.getElementById('csvIncludeTx').checked = true;
+            document.getElementById('csvIncludeTr').checked = true;
+            toggleCsvCustomRange();
+            const today = new Date().toISOString().slice(0, 10);
+            document.getElementById('csvFromDate').value = today;
+            document.getElementById('csvToDate').value = today;
+            document.getElementById('csvModal').style.display = 'flex';
+        }
+        function closeCsvModal() { document.getElementById('csvModal').style.display = 'none'; }
+
+        function toggleCsvCustomRange() {
+            const isCustom = document.getElementById('csvRangeType').value === 'custom';
+            document.getElementById('csvCustomRangeRow').style.display = isCustom ? 'grid' : 'none';
+        }
+
+        function csvEscape(value) {
+            const str = String(value === undefined || value === null ? '' : value);
+            if (/[",\n]/.test(str)) {
+                return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+        }
+
+        function generateCsv(e) {
+            e.preventDefault();
+            const rangeType = document.getElementById('csvRangeType').value;
+            const includeTx = document.getElementById('csvIncludeTx').checked;
+            const includeTr = document.getElementById('csvIncludeTr').checked;
+
+            let start, end;
+            if (rangeType === 'custom') {
+                const fromVal = document.getElementById('csvFromDate').value;
+                const toVal = document.getElementById('csvToDate').value;
+                if (!fromVal || !toVal) { alert('Selecciona ambas fechas del periodo personalizado.'); return; }
+                start = new Date(fromVal + 'T00:00:00');
+                end = new Date(toVal + 'T23:59:59');
+                if (start > end) { alert('La fecha "Desde" no puede ser posterior a la fecha "Hasta".'); return; }
+            } else {
+                const range = getPeriodRange(rangeType);
+                start = range.start; end = range.end;
+            }
+
+            if (!includeTx && !includeTr) { alert('Selecciona al menos un tipo de dato a exportar.'); return; }
+
+            const rows = [['Registro', 'Fecha', 'Concepto / Nota', 'Tipo', 'Cuenta / Origen', 'Cuenta Destino', 'Categoría', 'Subcategoría', 'Monto (GTQ)', 'Objetivo Vinculado', 'Monto a Objetivo (GTQ)']];
+
+            if (includeTx) {
+                (db.data[currentUser] || [])
+                    .filter(tx => isDateInRange(tx.date, start, end))
+                    .sort((a, b) => a.date.localeCompare(b.date))
+                    .forEach(tx => {
+                        rows.push(['Movimiento', tx.date, tx.concept, tx.type, tx.account, '', tx.mainCat, tx.subCat, parseFloat(tx.amount).toFixed(2), tx.goalTitle || '', tx.goalId ? parseFloat(tx.goalAmount).toFixed(2) : '']);
+                    });
+            }
+
+            if (includeTr) {
+                (db.transfers[currentUser] || [])
+                    .filter(tr => isDateInRange(tr.date, start, end))
+                    .sort((a, b) => a.date.localeCompare(b.date))
+                    .forEach(tr => {
+                        rows.push(['Transferencia', tr.date, tr.note || 'Transferencia Interna', 'Transferencia', tr.from, tr.to, '', '', parseFloat(tr.amount).toFixed(2), '', '']);
+                    });
+            }
+
+            if (rows.length === 1) {
+                alert('No hay datos para el periodo y filtros seleccionados.');
+                return;
+            }
+
+            const csvContent = rows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+            const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const fromLabel = start.toISOString().slice(0, 10);
+            const toLabel = end.toISOString().slice(0, 10);
+            link.href = url;
+            link.download = `MiDinero_${currentUser}_${fromLabel}_a_${toLabel}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            closeCsvModal();
         }
 
         function populateCategoryManageSelect() {
