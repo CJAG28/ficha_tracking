@@ -138,6 +138,10 @@
             <button class="btn btn-secondary" onclick="createNewUser()" style="width:100%; margin-top:8px; font-size:0.75rem;">+ Agregar Usuario Local</button>
         </div>
 
+        <div class="user-profile" id="googleSheetStatusBox">
+            <!-- Se llena dinámicamente vía renderGoogleSheetStatus() -->
+        </div>
+
         <ul class="nav-menu">
             <li><button class="nav-btn active" onclick="showTab('dashboard', event)">🏠 Panel General</button></li>
             <li><button class="nav-btn" onclick="showTab('diario', event)">📝 Registro Diario</button></li>
@@ -547,8 +551,225 @@
             },
             data: {},
             transfers: {},
-            goals: {}
+            goals: {},
+            googleSheets: {}
         };
+
+        // ---- Integración con Google Sheets ----
+        const GOOGLE_CLIENT_ID = '649645652913-lfj1njq2bcd7qrqghbi53mq6qd257c27.apps.googleusercontent.com';
+        const GOOGLE_SHEETS_SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
+
+        let googleTokenClient = null;
+        let googleAccessToken = null;
+        let googleTokenExpiry = 0;
+        let pendingTokenResolve = null;
+        let pendingTokenReject = null;
+        let autoSyncTimeout = null;
+
+        function initGoogleTokenClient() {
+            if (!window.google || !google.accounts || !google.accounts.oauth2) {
+                setTimeout(initGoogleTokenClient, 300);
+                return;
+            }
+            googleTokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: GOOGLE_CLIENT_ID,
+                scope: GOOGLE_SHEETS_SCOPES,
+                callback: (tokenResponse) => {
+                    if (tokenResponse && tokenResponse.access_token) {
+                        googleAccessToken = tokenResponse.access_token;
+                        googleTokenExpiry = Date.now() + ((tokenResponse.expires_in || 3300) * 1000);
+                        if (pendingTokenResolve) { pendingTokenResolve(googleAccessToken); pendingTokenResolve = null; pendingTokenReject = null; }
+                    } else if (pendingTokenReject) {
+                        pendingTokenReject(new Error('No se obtuvo el token de acceso de Google.'));
+                        pendingTokenResolve = null; pendingTokenReject = null;
+                    }
+                },
+                error_callback: (err) => {
+                    if (pendingTokenReject) { pendingTokenReject(err); pendingTokenResolve = null; pendingTokenReject = null; }
+                }
+            });
+        }
+
+        function getValidAccessToken() {
+            return new Promise((resolve, reject) => {
+                if (googleAccessToken && Date.now() < googleTokenExpiry) { resolve(googleAccessToken); return; }
+                if (!googleTokenClient) { reject(new Error('Google Identity Services no está listo todavía.')); return; }
+                pendingTokenResolve = resolve;
+                pendingTokenReject = reject;
+                googleTokenClient.requestAccessToken({ prompt: '' });
+            });
+        }
+
+        function renderGoogleSheetStatus() {
+            const box = document.getElementById('googleSheetStatusBox');
+            if (!box) return;
+
+            if (!currentUser.includes('@')) {
+                box.innerHTML = `<p style="font-size:0.72rem; opacity:0.8; line-height:1.4;">📄 La sincronización con Google Sheets solo está disponible para usuarios que inician sesión con Gmail.</p>`;
+                return;
+            }
+
+            const info = db.googleSheets && db.googleSheets[currentUser];
+            if (info && info.spreadsheetId) {
+                const lastSyncText = info.lastSync ? new Date(info.lastSync).toLocaleString('es-GT') : 'Aún no sincronizado';
+                box.innerHTML = `
+                    <p style="font-size:0.72rem; opacity:0.9;">📄 Google Sheet vinculado.<br>Última sincronización: ${lastSyncText}</p>
+                    <a href="https://docs.google.com/spreadsheets/d/${info.spreadsheetId}/edit" target="_blank" rel="noopener" class="btn btn-secondary" style="width:100%; text-align:center; font-size:0.75rem; margin-top:8px;">🔗 Abrir mi Google Sheet</a>
+                    <button class="btn btn-secondary" style="width:100%; font-size:0.75rem; margin-top:6px;" onclick="syncAllDataToSheet(true)">🔄 Sincronizar Ahora</button>
+                `;
+            } else {
+                box.innerHTML = `<button class="btn btn-secondary" style="width:100%; font-size:0.75rem;" onclick="connectGoogleSheet()">🔗 Crear/Conectar mi Google Sheet</button>`;
+            }
+        }
+
+        function setGoogleSheetStatusMessage(msg) {
+            const box = document.getElementById('googleSheetStatusBox');
+            if (box) box.innerHTML = `<p style="font-size:0.72rem; opacity:0.85;">⏳ ${msg}</p>`;
+        }
+
+        async function connectGoogleSheet() {
+            if (!currentUser.includes('@')) {
+                alert('Debes iniciar sesión con tu cuenta de Gmail para crear tu Google Sheet.');
+                return;
+            }
+            try {
+                setGoogleSheetStatusMessage('Conectando con Google (revisa si aparece una ventana de permisos)...');
+                await new Promise((resolve, reject) => {
+                    if (!googleTokenClient) { reject(new Error('Google Identity Services no está listo.')); return; }
+                    pendingTokenResolve = resolve;
+                    pendingTokenReject = reject;
+                    googleTokenClient.requestAccessToken({ prompt: 'consent' });
+                });
+                setGoogleSheetStatusMessage('Buscando o creando tu Google Sheet...');
+                await ensureSpreadsheetForUser();
+                setGoogleSheetStatusMessage('Sincronizando tus datos...');
+                await syncAllDataToSheet(false);
+                renderGoogleSheetStatus();
+                alert('✅ Tu Google Sheet fue creado/conectado y tus datos ya están sincronizados.');
+            } catch (err) {
+                console.error('Error al conectar con Google Sheets:', err);
+                renderGoogleSheetStatus();
+                alert('❌ No se pudo conectar con Google Sheets. Verifica que aceptaste los permisos solicitados, y que las APIs de Google Sheets y Google Drive estén habilitadas en tu proyecto de Google Cloud.');
+            }
+        }
+
+        async function ensureSpreadsheetForUser() {
+            if (!db.googleSheets) db.googleSheets = {};
+            const existing = db.googleSheets[currentUser];
+            if (existing && existing.spreadsheetId) return existing.spreadsheetId;
+
+            const token = await getValidAccessToken();
+            const sheetTitle = `MiDinero App - ${currentUser}`;
+
+            const query = `name='${sheetTitle.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
+            const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)`;
+            const searchRes = await fetch(searchUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+
+            if (searchRes.ok) {
+                const searchData = await searchRes.json();
+                if (searchData.files && searchData.files.length > 0) {
+                    db.googleSheets[currentUser] = { spreadsheetId: searchData.files[0].id, lastSync: null };
+                    persistDB();
+                    return searchData.files[0].id;
+                }
+            }
+
+            const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    properties: { title: sheetTitle },
+                    sheets: [
+                        { properties: { title: 'Movimientos' } },
+                        { properties: { title: 'Transferencias' } },
+                        { properties: { title: 'Objetivos' } }
+                    ]
+                })
+            });
+            if (!createRes.ok) throw new Error('No se pudo crear el Google Sheet. Revisa que la API de Google Sheets esté habilitada.');
+            const createData = await createRes.json();
+
+            db.googleSheets[currentUser] = { spreadsheetId: createData.spreadsheetId, lastSync: null };
+            persistDB();
+            return createData.spreadsheetId;
+        }
+
+        function buildMovimientosRows() {
+            const rows = [['Fecha', 'Concepto', 'Tipo', 'Cuenta', 'Categoría', 'Subcategoría', 'Monto (GTQ)', 'Objetivo Vinculado', 'Monto a Objetivo (GTQ)']];
+            (db.data[currentUser] || []).slice().sort((a, b) => a.date.localeCompare(b.date)).forEach(tx => {
+                rows.push([tx.date, tx.concept, tx.type, tx.account, tx.mainCat, tx.subCat, parseFloat(tx.amount), tx.goalTitle || '', tx.goalId ? parseFloat(tx.goalAmount) : '']);
+            });
+            return rows;
+        }
+
+        function buildTransferenciasRows() {
+            const rows = [['Fecha', 'Origen', 'Destino', 'Nota', 'Monto (GTQ)']];
+            (db.transfers[currentUser] || []).slice().sort((a, b) => a.date.localeCompare(b.date)).forEach(tr => {
+                rows.push([tr.date, tr.from, tr.to, tr.note || '', parseFloat(tr.amount)]);
+            });
+            return rows;
+        }
+
+        function buildObjetivosRows() {
+            const rows = [['Objetivo', 'Meta (GTQ)', 'Acumulado (GTQ)', 'Progreso (%)']];
+            (db.goals[currentUser] || []).forEach(g => {
+                const pct = g.target > 0 ? (g.current / g.target * 100) : 0;
+                rows.push([g.title, parseFloat(g.target), parseFloat(g.current), Math.round(pct * 10) / 10]);
+            });
+            return rows;
+        }
+
+        async function writeSheetTab(spreadsheetId, token, tabName, rows) {
+            const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+            const clearRange = encodeURIComponent(`'${tabName}'!A1:Z10000`);
+            const clearRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${clearRange}:clear`, { method: 'POST', headers });
+            if (!clearRes.ok) throw new Error(`No se pudo limpiar la hoja "${tabName}".`);
+
+            const updateRange = encodeURIComponent(`'${tabName}'!A1`);
+            const updateRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${updateRange}?valueInputOption=RAW`, {
+                method: 'PUT', headers, body: JSON.stringify({ values: rows })
+            });
+            if (!updateRes.ok) throw new Error(`No se pudo actualizar la hoja "${tabName}".`);
+        }
+
+        async function syncAllDataToSheet(showAlert) {
+            if (!currentUser.includes('@')) {
+                if (showAlert) alert('La sincronización con Google Sheets solo está disponible para usuarios que iniciaron sesión con Gmail.');
+                return;
+            }
+            const sheetInfo = db.googleSheets && db.googleSheets[currentUser];
+            if (!sheetInfo || !sheetInfo.spreadsheetId) {
+                if (showAlert) alert('Aún no has conectado un Google Sheet. Haz clic en "Crear/Conectar mi Google Sheet" primero.');
+                return;
+            }
+
+            try {
+                const token = await getValidAccessToken();
+                const spreadsheetId = sheetInfo.spreadsheetId;
+
+                await writeSheetTab(spreadsheetId, token, 'Movimientos', buildMovimientosRows());
+                await writeSheetTab(spreadsheetId, token, 'Transferencias', buildTransferenciasRows());
+                await writeSheetTab(spreadsheetId, token, 'Objetivos', buildObjetivosRows());
+
+                sheetInfo.lastSync = new Date().toISOString();
+                persistDB();
+                renderGoogleSheetStatus();
+                if (showAlert) alert('✅ Sincronización completada. Tus datos ya están en Google Sheets.');
+            } catch (err) {
+                console.error('Error al sincronizar con Google Sheets:', err);
+                renderGoogleSheetStatus();
+                if (showAlert) alert('❌ Ocurrió un error al sincronizar con Google Sheets. Puede que el permiso haya vencido; intenta de nuevo.');
+            }
+        }
+
+        function scheduleAutoSyncToSheet() {
+            if (!currentUser.includes('@')) return;
+            const info = db.googleSheets && db.googleSheets[currentUser];
+            if (!info || !info.spreadsheetId) return;
+            clearTimeout(autoSyncTimeout);
+            autoSyncTimeout = setTimeout(() => { syncAllDataToSheet(false).catch(() => {}); }, 2000);
+        }
+        // ---- Fin integración con Google Sheets ----
 
         function initApp() {
             const savedDB = localStorage.getItem('miDinero_V2_DB');
@@ -571,6 +792,8 @@
             renderData();
             runDeepAnalysis();
             populateCategoryManageSelect();
+            renderGoogleSheetStatus();
+            initGoogleTokenClient();
             document.getElementById('txDate').valueAsDate = new Date();
             document.getElementById('trDate').valueAsDate = new Date();
         }
@@ -596,14 +819,20 @@
                 saveDB();
                 populateUserSelector();
                 renderData();
+                renderGoogleSheetStatus();
                 alert(`¡Bienvenido/a, ${payload.name}! Sesión iniciada correctamente con Gmail.`);
             } catch (err) {
                 console.error("Error al procesar el token de Google:", err);
             }
         }
 
-        function saveDB() {
+        function persistDB() {
             localStorage.setItem('miDinero_V2_DB', JSON.stringify(db));
+        }
+
+        function saveDB() {
+            persistDB();
+            scheduleAutoSyncToSheet();
         }
 
         function populateUserSelector() {
@@ -621,6 +850,7 @@
             currentUser = document.getElementById('userSelector').value;
             renderData();
             runDeepAnalysis();
+            renderGoogleSheetStatus();
         }
 
         function createNewUser() {
@@ -634,6 +864,7 @@
                 saveDB();
                 populateUserSelector();
                 renderData();
+                renderGoogleSheetStatus();
             }
         }
 
