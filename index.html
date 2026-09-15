@@ -399,26 +399,21 @@
                 <p id="categoryReplacedNotice" style="display:none; font-size:0.85rem; color:var(--text-muted); margin-bottom:14px;">📁 Categoría: se registrará automáticamente como <strong>APORTES A OBJETIVOS</strong>, ya que indicaste a qué objetivo se destina.</p>
                 <div class="form-group">
                     <label>Monto (GTQ)</label>
-                    <input type="number" step="0.01" id="txAmount" class="form-control" placeholder="0.00" required onchange="syncGoalAmountMax()">
+                    <input type="number" step="0.01" id="txAmount" class="form-control" placeholder="0.00" required onchange="updateGoalAmountPreview()">
                 </div>
 
                 <div class="form-group" style="background: var(--brand-light); padding: 10px 12px; border-radius: 8px;">
                     <label style="display:flex; align-items:center; gap:6px; font-weight:600;">
-                        <input type="checkbox" id="txLinkGoal" style="width:auto;" onchange="toggleGoalLinkFields()"> Destinar parte de este movimiento a un Objetivo
+                        <input type="checkbox" id="txLinkGoal" style="width:auto;" onchange="toggleGoalLinkFields()"> Destinar este movimiento a un Objetivo
                     </label>
                     <div id="goalLinkFields" style="display:none; margin-top:10px;">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Objetivo</label>
-                                <select id="txGoalId" class="form-control"></select>
-                            </div>
-                            <div class="form-group">
-                                <label>Monto a Abonar (GTQ)</label>
-                                <input type="number" step="0.01" id="txGoalAmount" class="form-control" placeholder="0.00">
-                            </div>
+                        <div class="form-group">
+                            <label>Objetivo</label>
+                            <select id="txGoalId" class="form-control"></select>
                         </div>
-                        <p style="font-size:0.78rem; color:var(--text-muted);">Ej. De <strong>GTQ 2000.00</strong> de <strong>BANCO 1</strong> hacia tu objetivo <strong>"COMPRA DE VEHÍCULO NUEVO"</strong>. El monto abonado no puede superar el monto del movimiento.</p>
+                        <p style="font-size:0.78rem; color:var(--text-muted);">Se abonará el monto completo de este movimiento (<strong id="goalAmountPreview">GTQ 0.00</strong>) al objetivo seleccionado. Ej. <strong>GTQ 2000.00</strong> de <strong>BANCO 1</strong> hacia tu objetivo <strong>"COMPRA DE VEHÍCULO NUEVO"</strong>.</p>
                     </div>
+                </div>
                 </div>
 
                 <div class="modal-actions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
@@ -1156,7 +1151,7 @@
                 typeSel.disabled = true;
                 populateCategoryDropdowns();
 
-                syncGoalAmountMax();
+                updateGoalAmountPreview();
             } else {
                 categoryRow.style.display = 'grid';
                 notice.style.display = 'none';
@@ -1166,11 +1161,10 @@
             }
         }
 
-        function syncGoalAmountMax() {
+        function updateGoalAmountPreview() {
             const txAmount = parseFloat(document.getElementById('txAmount').value) || 0;
-            const goalAmountInput = document.getElementById('txGoalAmount');
-            goalAmountInput.max = txAmount;
-            if (!goalAmountInput.value) goalAmountInput.value = txAmount || '';
+            const preview = document.getElementById('goalAmountPreview');
+            if (preview) preview.textContent = `GTQ ${txAmount.toFixed(2)}`;
         }
 
         function closeTxModal() { document.getElementById('txModal').style.display = 'none'; }
@@ -1223,12 +1217,11 @@
 
             if (linkGoal) {
                 const goalIdRaw = document.getElementById('txGoalId').value;
-                goalAmount = parseFloat(document.getElementById('txGoalAmount').value) || 0;
 
                 if (!goalIdRaw) { alert('No tienes objetivos creados. Crea uno primero en "Objetivos por Alcanzar".'); return; }
-                if (goalAmount <= 0) { alert('Indica el monto a abonar al objetivo.'); return; }
-                if (goalAmount > txAmount) { alert('El monto a abonar al objetivo no puede superar el monto del movimiento.'); return; }
+                if (!txAmount || txAmount <= 0) { alert('Indica el monto del movimiento.'); return; }
 
+                goalAmount = txAmount; // el aporte al objetivo es el mismo monto del movimiento
                 goalId = parseInt(goalIdRaw);
                 const goalRef = (db.goals[currentUser] || []).find(g => g.id === goalId);
                 goalTitle = goalRef ? goalRef.title : null;
