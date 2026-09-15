@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control Financiero Personal Avanzado</title>
+    <!-- Chart.js para visualizaciones -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Google Identity Services SDK -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         :root {
@@ -31,6 +33,18 @@
         }
 
         .sidebar h1 { font-size: 1.2rem; font-weight: 700; text-align: center; }
+
+        /* Google Auth Section */
+        .google-auth-container {
+            background: rgba(255, 255, 255, 0.08);
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
         .user-profile { background: rgba(255, 255, 255, 0.1); padding: 10px; border-radius: 8px; font-size: 0.85rem; }
         .user-profile select { width: 100%; margin-top: 6px; padding: 6px; border-radius: 4px; border: none; font-weight: 600; }
 
@@ -69,7 +83,6 @@
             background-color: #fef2f2; border: 1px solid #fca5a5; color: #991b1b;
             padding: 14px 18px; border-radius: 8px; margin-bottom: 24px; font-size: 0.9rem; display: flex; align-items: center; gap: 12px;
         }
-        .alert-warning { background-color: #fffbebfb; border-color: #fcd34d; color: #92400e; }
 
         .card { background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border-color); padding: 20px; margin-bottom: 24px; }
         .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
@@ -81,7 +94,6 @@
         .badge { padding: 3px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 700; }
         .badge-ingreso { background: #d1fae5; color: #065f46; }
         .badge-egreso { background: #fee2e2; color: #991b1b; }
-        .badge-transf { background: #e0f2fe; color: #0369a1; }
 
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
@@ -102,11 +114,30 @@
     <!-- SIDEBAR -->
     <div class="sidebar">
         <h1>📊 MiDinero App</h1>
+
+        <!-- BOTÓN GOOGLE SIGN-IN -->
+        <div class="google-auth-container">
+            <div id="g_id_onload"
+                 data-client_id="649645652913-lfj1njq2bcd7qrqghbi53mq6qd257c27.apps.googleusercontent.com"
+                 data-callback="handleCredentialResponse"
+                 data-auto_prompt="false">
+            </div>
+            <div class="g_id_signin"
+                 data-type="standard"
+                 data-size="medium"
+                 data-theme="outline"
+                 data-text="sign_in_with"
+                 data-shape="rectangular"
+                 data-logo_alignment="left">
+            </div>
+        </div>
+
         <div class="user-profile">
             <label>Usuario Activo:</label>
             <select id="userSelector" onchange="switchUser()"></select>
-            <button class="btn btn-secondary" onclick="createNewUser()" style="width:100%; margin-top:8px; font-size:0.75rem;">+ Agregar Usuario</button>
+            <button class="btn btn-secondary" onclick="createNewUser()" style="width:100%; margin-top:8px; font-size:0.75rem;">+ Agregar Usuario Local</button>
         </div>
+
         <ul class="nav-menu">
             <li><button class="nav-btn active" onclick="showTab('dashboard', event)">🏠 Panel General</button></li>
             <li><button class="nav-btn" onclick="showTab('diario', event)">📝 Registro Diario</button></li>
@@ -130,9 +161,8 @@
                 <button class="btn btn-primary" onclick="openTxModal()">+ Nuevo Movimiento</button>
             </div>
 
-            <!-- LIQUIDITY ALERT BOX -->
             <div id="liquidityAlert" class="alert-box" style="display: none;">
-                ⚠️ <strong>¡ALERTA DE LIQUIDEZ BAJA!</strong> Has consumido más del 75% de tu disponible quincenal. Te queda menos del 25% de liquidez.
+                ⚠️ <strong>¡ALERTA DE LIQUIDEZ BAJA!</strong> Te queda el 25% o menos de tu presupuesto disponible quincenal.
             </div>
 
             <div class="card" style="background: var(--brand-light); border-color: #bce0fd;">
@@ -182,7 +212,7 @@
             <div class="header-bar">
                 <div class="header-title">
                     <h2>Transferencias Internas</h2>
-                    <p>Mueve saldo entre tus cuentas (Billetera, Bancos, Ahorro) sin alterar tus ingresos o egresos netos</p>
+                    <p>Mueve saldo entre tus cuentas (Billetera, Bancos, Ahorro)</p>
                 </div>
                 <button class="btn btn-primary" onclick="openTransferModal()">+ Nueva Transferencia</button>
             </div>
@@ -222,7 +252,7 @@
             <div class="header-bar">
                 <div class="header-title">
                     <h2>📈 ANÁLISIS PROFUNDO - Proyección de Cuenta de Ahorro</h2>
-                    <p>Calculadora de Interés Compuesto y recomendaciones dinámicas de aporte mensual</p>
+                    <p>Calculadora de Interés Compuesto y recomendaciones dinámicas</p>
                 </div>
             </div>
 
@@ -309,7 +339,7 @@
 
     </div>
 
-    <!-- MODAL REGISTRO / EDICIÓN MOVIMIENTO -->
+    <!-- MODALES -->
     <div class="modal-overlay" id="txModal">
         <div class="modal">
             <h3 id="modalTitle">Registrar Movimiento Financiero</h3>
@@ -358,7 +388,6 @@
         </div>
     </div>
 
-    <!-- MODAL TRANSFERENCIA INTERNA -->
     <div class="modal-overlay" id="transferModal">
         <div class="modal">
             <h3>Registrar Transferencia Interna</h3>
@@ -393,7 +422,6 @@
         </div>
     </div>
 
-    <!-- MODAL OBJETIVOS -->
     <div class="modal-overlay" id="goalModal">
         <div class="modal">
             <h3>Crear Nuevo Objetivo por Alcanzar</h3>
@@ -419,7 +447,6 @@
     </div>
 
     <script>
-        // Global App State
         let currentUser = 'DefaultUser';
         let db = {
             users: ['DefaultUser'],
@@ -469,6 +496,33 @@
             document.getElementById('trDate').valueAsDate = new Date();
         }
 
+        // Manejador del Inicio de Sesión de Google
+        function handleCredentialResponse(response) {
+            try {
+                const base64Url = response.credential.split('.')[1];
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+
+                const payload = JSON.parse(jsonPayload);
+                const googleEmail = payload.email;
+
+                if (!db.users.includes(googleEmail)) {
+                    db.users.push(googleEmail);
+                    db.data[googleEmail] = [];
+                    db.transfers[googleEmail] = [];
+                    db.goals[googleEmail] = [];
+                }
+
+                currentUser = googleEmail;
+                saveDB();
+                populateUserSelector();
+                renderData();
+                alert(`¡Bienvenido/a, ${payload.name}! Sesión iniciada correctamente con Gmail.`);
+            } catch (err) {
+                console.error("Error al procesar el token de Google:", err);
+            }
+        }
+
         function saveDB() {
             localStorage.setItem('miDinero_V2_DB', JSON.stringify(db));
         }
@@ -504,7 +558,6 @@
             }
         }
 
-        // TAB SWITCHING
         function showTab(tabId, ev) {
             document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
@@ -512,37 +565,28 @@
             if (ev) ev.target.classList.add('active');
         }
 
-        // RENDER CORE DATA
         function renderData() {
             const userTx = db.data[currentUser] || [];
             const userTr = db.transfers[currentUser] || [];
 
-            // Compute Account Balances
             const accountBalances = {};
             db.accounts.forEach(acc => accountBalances[acc] = 0);
-
-            let totalIngresos = 0;
-            let totalEgresos = 0;
 
             userTx.forEach(tx => {
                 const amt = parseFloat(tx.amount);
                 if (tx.type === 'Ingreso') {
-                    totalIngresos += amt;
                     accountBalances[tx.account] = (accountBalances[tx.account] || 0) + amt;
                 } else {
-                    totalEgresos += amt;
                     accountBalances[tx.account] = (accountBalances[tx.account] || 0) - amt;
                 }
             });
 
-            // Adjust balances with internal transfers
             userTr.forEach(tr => {
                 const amt = parseFloat(tr.amount);
                 accountBalances[tr.from] = (accountBalances[tr.from] || 0) - amt;
                 accountBalances[tr.to] = (accountBalances[tr.to] || 0) + amt;
             });
 
-            // Render Account KPIs
             const accountsGrid = document.getElementById('accountsKpiGrid');
             accountsGrid.innerHTML = '';
             let totalLiquidez = 0;
@@ -559,7 +603,6 @@
                 accountsGrid.appendChild(card);
             });
 
-            // Total Net Liquidity Card
             const totalCard = document.createElement('div');
             totalCard.className = 'kpi-card';
             totalCard.style.border = '2px solid var(--brand-color)';
@@ -571,7 +614,6 @@
 
             document.getElementById('kpi-liquido-total').textContent = `GTQ ${totalLiquidez.toFixed(2)}`;
 
-            // DAILY LIQUIDITY & ALERT LOGIC
             const today = new Date();
             const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
             const daysLeft = Math.max(1, (today.getDate() <= 15 ? 15 - today.getDate() : lastDayOfMonth - today.getDate()));
@@ -579,17 +621,9 @@
 
             document.getElementById('kpi-gasto-diario').textContent = `GTQ ${dailyLimit.toFixed(2)} / día (${daysLeft} días restantes)`;
 
-            // 25% Threshold Alert check (Base Quincena = 5250)
-            const baseQuincena = 5250;
-            const alertThreshold = baseQuincena * 0.25;
-            const alertBox = document.getElementById('liquidityAlert');
-            if (totalLiquidez <= alertThreshold) {
-                alertBox.style.display = 'flex';
-            } else {
-                alertBox.style.display = 'none';
-            }
+            const alertThreshold = 5250 * 0.25;
+            document.getElementById('liquidityAlert').style.display = totalLiquidez <= alertThreshold ? 'flex' : 'none';
 
-            // Render Transactions Table
             const tbody = document.getElementById('txTableBody');
             tbody.innerHTML = '';
             userTx.forEach(tx => {
@@ -609,7 +643,6 @@
                 tbody.appendChild(tr);
             });
 
-            // Render Transfer Table
             const trBody = document.getElementById('transferTableBody');
             trBody.innerHTML = '';
             userTr.forEach(tr => {
@@ -627,11 +660,9 @@
                 trBody.appendChild(row);
             });
 
-            // Render Goals
             renderGoals();
         }
 
-        // GOALS ENGINE WITH DYNAMIC COLORING
         function renderGoals() {
             const goals = db.goals[currentUser] || [];
             const container = document.getElementById('goalsContainer');
@@ -639,14 +670,7 @@
 
             goals.forEach(g => {
                 const pct = Math.min(100, Math.max(0, (g.current / g.target) * 100));
-                
-                // Color ramp: Red (<40%) -> Yellow (40-75%) -> Green (>75%)
-                let barColor = 'var(--accent-red)';
-                if (pct >= 75) {
-                    barColor = 'var(--accent-green)';
-                } else if (pct >= 40) {
-                    barColor = 'var(--accent-warning)';
-                }
+                let barColor = pct >= 75 ? 'var(--accent-green)' : (pct >= 40 ? 'var(--accent-warning)' : 'var(--accent-red)');
 
                 const card = document.createElement('div');
                 card.className = 'card';
@@ -667,7 +691,6 @@
             });
         }
 
-        // DEEP FINANCIAL ANALYSIS (COMPOUND INTEREST)
         function runDeepAnalysis() {
             const P = parseFloat(document.getElementById('analysisCurrentBalance').value) || 0;
             const annualRate = (parseFloat(document.getElementById('analysisInterestRate').value) || 0) / 100;
@@ -677,9 +700,7 @@
             function calculateFutureValue(months) {
                 const t = months / 12;
                 const r_n = annualRate / n;
-                // Compound principal
                 const compoundPrincipal = P * Math.pow(1 + r_n, n * t);
-                // Compound monthly deposits series approximation
                 let totalPMTContrib = 0;
                 for (let i = 1; i <= months; i++) {
                     const remainingYears = (months - i) / 12;
@@ -696,9 +717,7 @@
             document.getElementById('proj1y').textContent = `GTQ ${val1y.toFixed(2)}`;
             document.getElementById('proj2y').textContent = `GTQ ${val2y.toFixed(2)}`;
 
-            // Recommendation engine logic
             const recommendedPMT = PMT + 100;
-            const recPMTMonths = 12;
             let recFV = P * Math.pow(1 + (annualRate/n), n * 1);
             for (let i = 1; i <= 12; i++) {
                 recFV += recommendedPMT * Math.pow(1 + (annualRate/n), n * ((12 - i) / 12));
@@ -711,7 +730,6 @@
             `;
         }
 
-        // MODAL MANAGEMENT & DROPDOWNS
         function openTxModal() {
             document.getElementById('editTxId').value = '';
             document.getElementById('txForm').reset();
@@ -793,7 +811,6 @@
             }
         }
 
-        // TRANSFERS
         function openTransferModal() {
             populateAccountDropdown('trFromAccount');
             populateAccountDropdown('trToAccount');
@@ -828,7 +845,6 @@
             }
         }
 
-        // GOALS MODAL & ACTIONS
         function openGoalModal() { document.getElementById('goalModal').style.display = 'flex'; }
         function closeGoalModal() { document.getElementById('goalModal').style.display = 'none'; }
 
@@ -863,7 +879,6 @@
             }
         }
 
-        // CATEGORY MANAGEMENT
         function populateCategoryManageSelect() {
             const sel = document.getElementById('manageCategorySelect');
             sel.innerHTML = '';
