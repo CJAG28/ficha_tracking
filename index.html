@@ -382,7 +382,7 @@
                         <select id="txAccount" class="form-control" required></select>
                     </div>
                 </div>
-                <div class="form-row">
+                <div class="form-row" id="categoryFieldsRow">
                     <div class="form-group">
                         <label>Categoría Principal</label>
                         <select id="txMainCategory" class="form-control" onchange="updateSubcatDropdown()" required></select>
@@ -392,6 +392,7 @@
                         <select id="txSubCategory" class="form-control" required></select>
                     </div>
                 </div>
+                <p id="categoryReplacedNotice" style="display:none; font-size:0.85rem; color:var(--text-muted); margin-bottom:14px;">📁 Categoría: se registrará automáticamente como <strong>APORTES A OBJETIVOS</strong>, ya que indicaste a qué objetivo se destina.</p>
                 <div class="form-group">
                     <label>Monto (GTQ)</label>
                     <input type="number" step="0.01" id="txAmount" class="form-control" placeholder="0.00" required onchange="syncGoalAmountMax()">
@@ -711,7 +712,7 @@
                     <td>${tx.concept}</td>
                     <td><span class="badge ${tx.type === 'Ingreso' ? 'badge-ingreso' : 'badge-egreso'}">${tx.type}</span></td>
                     <td><strong>${tx.account}</strong></td>
-                    <td>${tx.mainCat} - <em>${tx.subCat}</em>${tx.goalId ? `<br><span class="badge" style="background:#e0f2fe; color:#0369a1; margin-top:4px; display:inline-block;">🎯 GTQ ${parseFloat(tx.goalAmount).toFixed(2)} a "${tx.goalTitle}"</span>` : ''}</td>
+                    <td>${tx.goalId ? `<span class="badge" style="background:#e0f2fe; color:#0369a1; display:inline-block;">🎯 Aporte a Objetivo: GTQ ${parseFloat(tx.goalAmount).toFixed(2)} a "${tx.goalTitle}"</span>` : `${tx.mainCat} - <em>${tx.subCat}</em>`}</td>
                     <td><strong>GTQ ${parseFloat(tx.amount).toFixed(2)}</strong></td>
                     <td style="text-align: center;">
                         <button class="btn btn-edit" onclick="editTransaction(${tx.id})">✏️</button>
@@ -906,7 +907,32 @@
         function toggleGoalLinkFields() {
             const checked = document.getElementById('txLinkGoal').checked;
             document.getElementById('goalLinkFields').style.display = checked ? 'block' : 'none';
-            if (checked) syncGoalAmountMax();
+
+            const categoryRow = document.getElementById('categoryFieldsRow');
+            const notice = document.getElementById('categoryReplacedNotice');
+            const mainCatSel = document.getElementById('txMainCategory');
+            const subCatSel = document.getElementById('txSubCategory');
+            const typeSel = document.getElementById('txType');
+
+            if (checked) {
+                categoryRow.style.display = 'none';
+                notice.style.display = 'block';
+                mainCatSel.required = false;
+                subCatSel.required = false;
+
+                // Un aporte a objetivo siempre es un egreso desde la cuenta seleccionada.
+                typeSel.value = 'Egreso';
+                typeSel.disabled = true;
+                populateCategoryDropdowns();
+
+                syncGoalAmountMax();
+            } else {
+                categoryRow.style.display = 'grid';
+                notice.style.display = 'none';
+                mainCatSel.required = true;
+                subCatSel.required = true;
+                typeSel.disabled = false;
+            }
         }
 
         function syncGoalAmountMax() {
@@ -981,10 +1007,10 @@
                 id: editId ? parseInt(editId) : Date.now(),
                 date: document.getElementById('txDate').value,
                 concept: document.getElementById('txConcept').value,
-                type: document.getElementById('txType').value,
+                type: linkGoal ? 'Egreso' : document.getElementById('txType').value,
                 account: document.getElementById('txAccount').value,
-                mainCat: document.getElementById('txMainCategory').value,
-                subCat: document.getElementById('txSubCategory').value,
+                mainCat: linkGoal ? 'APORTES A OBJETIVOS' : document.getElementById('txMainCategory').value,
+                subCat: linkGoal ? goalTitle : document.getElementById('txSubCategory').value,
                 amount: txAmount,
                 goalId: goalId,
                 goalTitle: goalTitle,
